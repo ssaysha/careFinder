@@ -10,7 +10,7 @@ import { AuthProvider } from "./context/AuthContext";
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <AuthProvider>
-      <BrowserRouter>
+      <BrowserRouter basename="/careFinder">
         <App />
       </BrowserRouter>
     </AuthProvider>

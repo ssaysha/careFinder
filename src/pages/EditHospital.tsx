@@ -55,7 +55,7 @@ function EditHospital() {
 
   setSaving(true);
 
-  const { data, error, count } = await supabase
+  const { data, error } = await supabase
   .from("hospitals")
   .update({
     name: hospital.name,
@@ -72,8 +72,7 @@ console.log("UPDATE DATA:", data);
 console.log("UPDATE ERROR:", error);
 console.log("HOSPITAL STATE:", hospital);
 
-  setSaving(false);
-
+  setSaving(false)
   console.log("UPDATE RESULT:", data);
   console.log("UPDATE ERROR:", error);
 

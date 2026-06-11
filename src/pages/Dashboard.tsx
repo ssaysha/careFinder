@@ -3,24 +3,51 @@ import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/AuthContext";
 import { useNavigate } from "react-router-dom";
 
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+} from "recharts";
+
+type Hospital = {
+  city: string;
+};
+
 function Dashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
 
-  const [totalHospitals, setTotalHospitals] = useState<number>(0);
+  const [data, setData] = useState<{ city: string; count: number }[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchStats = async () => {
-      // better than select("*") — only gets count
-      const { count, error } = await supabase
+      const { data: hospitals, error } = await supabase
         .from("hospitals")
-        .select("*", { count: "exact", head: true });
+        .select("city");
 
-      if (!error) {
-        setTotalHospitals(count || 0);
+      if (error) {
+        console.error(error);
+        setLoading(false);
+        return;
       }
 
+      const stats: Record<string, number> = {};
+
+      (hospitals || []).forEach((h: Hospital) => {
+        const city = h.city || "Unknown";
+        stats[city] = (stats[city] || 0) + 1;
+      });
+
+      const chartData = Object.entries(stats).map(([city, count]) => ({
+        city,
+        count,
+      }));
+
+      setData(chartData);
       setLoading(false);
     };
 
@@ -33,79 +60,61 @@ function Dashboard() {
   };
 
   if (loading) {
-    return (
-      <div className="p-6">
-        <h1>Loading dashboard...</h1>
-      </div>
-    );
+    return <div className="p-6">Loading dashboard...</div>;
   }
 
   return (
     <div className="max-w-6xl mx-auto p-6">
 
       {/* HEADER */}
-      <h1 className="text-4xl font-bold text-slate-800 mb-2">
+      <h1 className="text-4xl font-bold mb-2">
         Admin Dashboard
       </h1>
 
-      <p className="text-slate-500 mb-6">
-        Overview of CareFinder system
+      <p className="text-gray-500 mb-6">
+        Hospital analytics overview
       </p>
 
-      {/* GRID */}
-      <div className="grid gap-6 md:grid-cols-2">
+      {/* USER */}
+      <div className="mb-6">
+        <p className="text-sm text-gray-600">
+          Logged in: {user?.email}
+        </p>
+      </div>
 
-        {/* USER */}
-        <div className="bg-white border rounded-xl p-6 shadow-sm">
-          <h2 className="text-xl font-semibold mb-2">
-            Logged In User
-          </h2>
-          <p className="text-slate-600">{user?.email}</p>
+      {/* CHART */}
+      <div className="bg-white border rounded-xl p-6 shadow-sm">
+        <h2 className="text-xl font-semibold mb-4">
+          Hospitals per City
+        </h2>
+
+        <div style={{ width: "100%", height: 300 }}>
+          <ResponsiveContainer>
+            <BarChart data={data}>
+              <XAxis dataKey="city" />
+              <YAxis />
+              <Tooltip />
+              <Bar dataKey="count" fill="#3b82f6" />
+            </BarChart>
+          </ResponsiveContainer>
         </div>
+      </div>
 
-        {/* HOSPITAL COUNT */}
-        <div className="bg-white border rounded-xl p-6 shadow-sm">
-          <h2 className="text-xl font-semibold mb-2">
-            Total Hospitals
-          </h2>
-          <p className="text-4xl font-bold text-blue-600">
-            {totalHospitals}
-          </p>
-        </div>
+      {/* ACTIONS */}
+      <div className="mt-6 flex gap-3">
+        <button
+          onClick={() => navigate("/hospitals")}
+          className="bg-blue-600 text-white px-4 py-2 rounded-lg"
+        >
+          View Hospitals
+        </button>
 
-        {/* SYSTEM STATUS */}
-        <div className="bg-white border rounded-xl p-6 shadow-sm">
-          <h2 className="text-xl font-semibold mb-2">
-            System Status
-          </h2>
-          <p className="text-green-600 font-medium">
-            ● All systems running
-          </p>
-        </div>
-
-        {/* QUICK ACTIONS */}
-        <div className="bg-white border rounded-xl p-6 shadow-sm">
-          <h2 className="text-xl font-semibold mb-3">
-            Quick Actions
-          </h2>
-
-          <div className="flex flex-col gap-3">
-            <button
-              onClick={() => navigate("/hospitals")}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg"
-            >
-              View Hospitals
-            </button>
-
-            <button
-              onClick={logout}
-              className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg"
-            >
-              Logout
-            </button>
-          </div>
-        </div>
-
+        <button
+          onClick={logout}
+          className="bg-red-600 text-white px-4 py-2 rounded-lg"
+        >
+          Logout
+        </button>
       </div>
     </div>
   );

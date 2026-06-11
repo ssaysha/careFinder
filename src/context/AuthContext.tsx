@@ -1,15 +1,32 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  ReactNode,
+} from "react";
+
 import { supabase } from "../lib/supabase";
 
-const AuthContext = createContext<any>(null);
+type User = {
+  id: string;
+  email?: string;
+};
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<any>(null);
+type AuthContextType = {
+  user: User | null;
+  role: string;
+};
+
+const AuthContext = createContext<AuthContextType | null>(null);
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
     const getUser = async () => {
       const { data } = await supabase.auth.getUser();
-      setUser(data.user);
+      setUser(data.user as User | null);
     };
 
     getUser();
@@ -17,13 +34,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
+      setUser((session?.user as User) ?? null);
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
-  // TEMPORARY ROLE (no Supabase dependency)
   const role = "admin";
 
   return (
@@ -34,5 +50,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 }
 
 export function useAuth() {
-  return useContext(AuthContext);
+  const context = useContext(AuthContext);
+
+  if (!context) {
+    throw new Error("useAuth must be used within AuthProvider");
+  }
+
+  return context;
 }

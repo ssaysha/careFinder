@@ -1,24 +1,57 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import Papa from "papaparse";
+import HospitalMap from "../components/HospitalMap";
 
 type Hospital = {
   id: string;
   name: string;
   address: string;
   city: string;
+  lga?: string;
   specialties: string;
   ownership_type: string;
+  latitude?: number;
+  longitude?: number;
 };
+
+type UserLocation = {
+  lat: number;
+  lng: number;
+} | null;
 
 function Hospitals() {
   const [hospitals, setHospitals] = useState<Hospital[]>([]);
-  const [filteredHospitals, setFilteredHospitals] = useState<Hospital[]>([]);
-  const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading] = useState(true);
 
+  const [searchTerm, setSearchTerm] = useState("");
+  const [specialtyFilter, setSpecialtyFilter] = useState("");
+  const [ownershipFilter, setOwnershipFilter] = useState("");
+
+  // NEW: radius search
+  const [radiusKm, setRadiusKm] = useState<number>(10);
+  const [userLocation, setUserLocation] =
+    useState<UserLocation>(null);
+
   const navigate = useNavigate();
+
+  // GET USER LOCATION (REQUIRED FEATURE)
+  useEffect(() => {
+    if (!navigator.geolocation) return;
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setUserLocation({
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+        });
+      },
+      (err) => {
+        console.warn("Location denied:", err);
+      }
+    );
+  }, []);
 
   // FETCH DATA
   useEffect(() => {
@@ -28,10 +61,9 @@ function Hospitals() {
         .select("*");
 
       if (error) {
-        console.error(error);
+        console.error("Fetch error:", error);
       } else {
         setHospitals(data || []);
-        setFilteredHospitals(data || []);
       }
 
       setLoading(false);
@@ -40,54 +72,87 @@ function Hospitals() {
     fetchHospitals();
   }, []);
 
-  // SEARCH FILTER
-  useEffect(() => {
-    const filtered = hospitals.filter(
-      (hospital) =>
-        hospital.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        hospital.city.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+  // Haversine formula (distance in KM)
+  const getDistanceKm = (
+    lat1: number,
+    lon1: number,
+    lat2?: number,
+    lon2?: number
+  ) => {
+    if (lat2 == null || lon2 == null) return Infinity;
 
-    setFilteredHospitals(filtered);
-  }, [searchTerm, hospitals]);
+    const R = 6371;
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLon = ((lon2 - lon1) * Math.PI) / 180;
 
-  // DELETE HOSPITAL
-  const deleteHospital = async (id: string) => {
-    const confirmDelete = window.confirm(
-      "Are you sure you want to delete this hospital?"
-    );
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos((lat1 * Math.PI) / 180) *
+        Math.cos((lat2 * Math.PI) / 180) *
+        Math.sin(dLon / 2) *
+        Math.sin(dLon / 2);
 
-    if (!confirmDelete) return;
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
-    const { error } = await supabase
-      .from("hospitals")
-      .delete()
-      .eq("id", id);
-
-    if (error) {
-      alert("Delete failed: " + error.message);
-      return;
-    }
-
-    const updated = hospitals.filter((h) => h.id !== id);
-    setHospitals(updated);
-    setFilteredHospitals(updated);
+    return R * c;
   };
 
-  // EDIT HOSPITAL
-  const editHospital = (id: string) => {
-    navigate(`/hospitals/edit/${id}`);
-  };
+  // FILTER LOGIC (WITH RADIUS SEARCH ADDED)
+  const filteredHospitals = useMemo(() => {
+    const search = searchTerm.toLowerCase();
+
+    return hospitals.filter((hospital) => {
+      const matchesSearch =
+        hospital.name?.toLowerCase().includes(search) ||
+        hospital.city?.toLowerCase().includes(search) ||
+        hospital.lga?.toLowerCase().includes(search);
+
+      const matchesSpecialty =
+        !specialtyFilter ||
+        hospital.specialties
+          ?.toLowerCase()
+          .includes(specialtyFilter.toLowerCase());
+
+      const matchesOwnership =
+        !ownershipFilter ||
+        hospital.ownership_type === ownershipFilter;
+
+      // NEW: radius filter
+      const withinRadius =
+        !userLocation ||
+        getDistanceKm(
+          userLocation.lat,
+          userLocation.lng,
+          hospital.latitude,
+          hospital.longitude
+        ) <= radiusKm;
+
+      return (
+        matchesSearch &&
+        matchesSpecialty &&
+        matchesOwnership &&
+        withinRadius
+      );
+    });
+  }, [
+    hospitals,
+    searchTerm,
+    specialtyFilter,
+    ownershipFilter,
+    radiusKm,
+    userLocation,
+  ]);
 
   // EXPORT CSV
   const exportCSV = () => {
     const csv = Papa.unparse(
-      filteredHospitals.map((hospital) => ({
-        Name: hospital.name,
-        Address: hospital.address,
-        City: hospital.city,
-        Specialties: hospital.specialties,
-        Ownership: hospital.ownership_type,
+      filteredHospitals.map((h) => ({
+        Name: h.name,
+        Address: h.address,
+        City: h.city,
+        LGA: h.lga,
+        Specialties: h.specialties,
+        Ownership: h.ownership_type,
       }))
     );
 
@@ -100,116 +165,119 @@ function Hospitals() {
     const link = document.createElement("a");
     link.href = url;
 
-    const today = new Date().toISOString().split("T")[0];
+    link.download = `hospitals-${searchTerm || "all"}-${
+      new Date().toISOString().split("T")[0]
+    }.csv`;
 
-    link.download = `carefinder-hospitals-${today}.csv`;
-
-    document.body.appendChild(link);
     link.click();
-    document.body.removeChild(link);
   };
 
   if (loading) {
-    return (
-      <div className="p-6">
-        <h1>Loading hospitals...</h1>
-      </div>
-    );
+    return <div className="p-6">Loading hospitals...</div>;
   }
 
   return (
-    <div className="max-w-5xl mx-auto p-6">
+    <div className="max-w-6xl mx-auto p-6">
 
-      {/* HEADER */}
-      <h1 className="text-4xl font-bold mb-2 text-slate-800">
-        CareFinder Hospitals
+      <h1 className="text-3xl font-bold mb-4">
+        Hospitals
       </h1>
 
-      <p className="text-slate-500 mb-6">
-        Search and manage hospitals across Nigeria
-      </p>
+      {/* RADIUS CONTROL (NEW REQUIRED UI) */}
+      <div className="mb-4 p-4 border rounded-lg bg-gray-50">
+        <p className="font-semibold mb-2">
+          Search Radius (KM)
+        </p>
 
-      {/* EXPORT BUTTON */}
-      <div className="flex justify-end mb-4">
-        <button
-  onClick={exportCSV}
-  className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg"
->
-  Export CSV
-</button>
+        <input
+          type="number"
+          value={radiusKm}
+          onChange={(e) =>
+            setRadiusKm(Number(e.target.value))
+          }
+          className="border p-2 rounded w-32"
+        />
+
+        <p className="text-sm text-gray-500 mt-2">
+          {userLocation
+            ? "Using your current location"
+            : "Location not enabled"}
+        </p>
       </div>
 
-      {/* SEARCH */}
-      <input
-        type="text"
-        placeholder="Search by hospital name or city..."
-        value={searchTerm}
-        onChange={(e) => setSearchTerm(e.target.value)}
-        className="w-full border bg-white rounded-xl p-3 mb-6 shadow-sm focus:ring-2 focus:ring-blue-500"
-      />
+      {/* MAP */}
+      <div className="mb-6 rounded-xl overflow-hidden border">
+        <HospitalMap hospitals={filteredHospitals} />
+      </div>
 
-      {/* EMPTY STATE */}
-      {filteredHospitals.length === 0 ? (
-        <p className="text-slate-500">No hospitals found.</p>
-      ) : (
-        <div className="grid gap-4">
+      {/* ACTIONS */}
+      <div className="mb-4">
+        <button
+          onClick={exportCSV}
+          className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg"
+        >
+          Export CSV
+        </button>
+      </div>
 
-          {filteredHospitals.map((hospital) => (
-            <div
-              key={hospital.id}
-              className="bg-white border rounded-xl p-5 shadow-sm hover:shadow-lg transition"
-            >
+      {/* FILTERS */}
+      <div className="grid md:grid-cols-3 gap-4 mb-6">
 
-              {/* DETAILS LINK */}
-              <Link to={`/hospitals/${hospital.id}`}>
-                <h2 className="text-2xl font-semibold text-slate-800">
-                  {hospital.name}
-                </h2>
+        <input
+          value={searchTerm}
+          onChange={(e) =>
+            setSearchTerm(e.target.value)
+          }
+          className="border p-3 rounded-lg"
+          placeholder="Search hospitals..."
+        />
 
-                <p className="mt-2 text-slate-600">
-                  <strong>Address:</strong> {hospital.address}
-                </p>
+        <select
+          value={specialtyFilter}
+          onChange={(e) =>
+            setSpecialtyFilter(e.target.value)
+          }
+          className="border p-3 rounded-lg"
+        >
+          <option value="">All Specialties</option>
+          <option value="maternity">Maternity</option>
+          <option value="emergency">Emergency</option>
+          <option value="dental">Dental</option>
+          <option value="pediatric">Pediatric</option>
+        </select>
 
-                <p className="text-slate-600">
-                  <strong>City:</strong> {hospital.city}
-                </p>
+        <select
+          value={ownershipFilter}
+          onChange={(e) =>
+            setOwnershipFilter(e.target.value)
+          }
+          className="border p-3 rounded-lg"
+        >
+          <option value="">All Ownership</option>
+          <option value="Public">Public</option>
+          <option value="Private">Private</option>
+        </select>
 
-                <p className="text-slate-600">
-                  <strong>Specialties:</strong> {hospital.specialties}
-                </p>
+      </div>
 
-                <p className="text-slate-600">
-                  <strong>Ownership:</strong> {hospital.ownership_type}
-                </p>
-
-                <p className="mt-3 text-blue-600 font-medium">
-                  View Details →
-                </p>
-              </Link>
-
-              {/* ACTION BUTTONS */}
-              <div className="flex gap-3 mt-4">
-
-                <button
-                  onClick={() => editHospital(hospital.id)}
-                  className="bg-amber-500 hover:bg-amber-600 text-white px-3 py-1 rounded-lg"
-                >
-                  Edit
-                </button>
-
-                <button
-                  onClick={() => deleteHospital(hospital.id)}
-                  className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded-lg"
-                >
-                  Delete
-                </button>
-
-              </div>
-            </div>
-          ))}
-
-        </div>
-      )}
+      {/* LIST */}
+      <div className="space-y-4">
+        {filteredHospitals.map((h) => (
+          <div
+            key={h.id}
+            className="border rounded-xl p-5"
+          >
+            <Link to={`/hospitals/${h.id}`}>
+              <h2 className="text-xl font-bold">
+                {h.name}
+              </h2>
+              <p className="text-sm text-gray-600">
+                {h.address} • {h.city}
+              </p>
+            </Link>
+          </div>
+        ))}
+      </div>
 
     </div>
   );

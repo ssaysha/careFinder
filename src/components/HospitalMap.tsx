@@ -1,24 +1,11 @@
-type Hospital = {
-  id: string;
-  name: string;
-  city: string;
-  latitude?: number;
-  longitude?: number;
-};
-
 type Props = {
-  hospitals: Hospital[];
+  hospitals: any[];
 };
 
-function HospitalMap({ hospitals }: Props) {
+function HospitalMap(_: Props) {
   return (
-    <div className="w-full h-[500px] rounded-xl overflow-hidden border">
-      <iframe
-        title="map"
-        width="100%"
-        height="100%"
-        src="https://www.openstreetmap.org/export/embed.html?bbox=3.0%2C4.0%2C9.5%2C13.5&layer=mapnik"
-      />
+    <div className="w-full h-96 bg-gray-100 flex items-center justify-center">
+      Map loading...
     </div>
   );
 }

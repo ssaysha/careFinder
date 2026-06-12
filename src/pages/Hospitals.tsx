@@ -35,17 +35,24 @@ function Hospitals() {
     searchParams.get("ownership") || ""
   );
 
-  
-  // GET USER LOCATION
+  const [radiusKm, setRadiusKm] = useState(10);
+
+  const [_userLocation, setUserLocation] = useState<{
+    lat: number;
+    lng: number;
+  } | null>(null);
+
   useEffect(() => {
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
+      (position) => {
         setUserLocation({
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude,
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
         });
       },
-      (err) => console.warn("Location error:", err)
+      (error) => {
+        console.error(error);
+      }
     );
   }, []);
 
@@ -93,7 +100,9 @@ function Hospitals() {
 
       const matchesSpecialty =
         !specialtyFilter ||
-        hospital.specialties?.toLowerCase().includes(specialtyFilter.toLowerCase());
+        hospital.specialties
+          ?.toLowerCase()
+          .includes(specialtyFilter.toLowerCase());
 
       const matchesOwnership =
         !ownershipFilter || hospital.ownership_type === ownershipFilter;
@@ -107,7 +116,10 @@ function Hospitals() {
     const ok = window.confirm("Delete this hospital?");
     if (!ok) return;
 
-    const { error } = await supabase.from("hospitals").delete().eq("id", id);
+    const { error } = await supabase
+      .from("hospitals")
+      .delete()
+      .eq("id", id);
 
     if (error) {
       alert(error.message);
@@ -164,17 +176,14 @@ function Hospitals() {
   return (
     <div className="max-w-6xl mx-auto p-6">
 
-      {/* HEADER */}
       <h1 className="text-3xl font-bold mb-4">
         Hospitals
       </h1>
 
-      {/* MAP */}
       <div className="mb-6 border rounded-xl overflow-hidden">
         <HospitalMap hospitals={filteredHospitals} />
       </div>
 
-      {/* ACTIONS */}
       <div className="flex gap-3 mb-4">
         <button
           onClick={exportCSV}
@@ -191,8 +200,7 @@ function Hospitals() {
         </button>
       </div>
 
-      {/* FILTERS */}
-      <div className="grid md:grid-cols-3 gap-4 mb-6">
+      <div className="grid md:grid-cols-4 gap-4 mb-6">
         <input
           className="border p-3 rounded-lg"
           placeholder="Search hospitals..."
@@ -221,9 +229,16 @@ function Hospitals() {
           <option value="Public">Public</option>
           <option value="Private">Private</option>
         </select>
+
+        <input
+          type="number"
+          value={radiusKm}
+          onChange={(e) => setRadiusKm(Number(e.target.value))}
+          className="border p-3 rounded-lg"
+          placeholder="Radius (km)"
+        />
       </div>
 
-      {/* LIST */}
       <div className="space-y-4">
         {filteredHospitals.map((h) => (
           <div key={h.id} className="border p-4 rounded-xl">
